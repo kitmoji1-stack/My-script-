@@ -1,5 +1,5 @@
 --[[
-    ⚡ ZERO PANEL v19 — ครบทุกฟังก์ชัน (Sell All + เปลี่ยนภาษา)
+    ⚡ ZERO PANEL v20 — สมบูรณ์แบบครบทุกฟังก์ชัน
     รหัสปลดล็อค: SiSi
 ]]
 
@@ -12,6 +12,7 @@ local Lighting          = game:GetService("Lighting")
 local RunService        = game:GetService("RunService")
 local TeleportService   = game:GetService("TeleportService")
 local HttpService       = game:GetService("HttpService")
+local VirtualUser       = game:GetService("VirtualUser")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- ════════════════════════ ตั้งค่า ════════════════════════
@@ -24,18 +25,29 @@ local THEME = {
     on = Color3.fromRGB(70, 220, 120), danger = Color3.fromRGB(255, 80, 80)
 }
 
+-- ⭐ ระบบจำค่า (Persist Config)
+local CONFIG_FILE = "ZeroPanel_Config.json"
+local config = { speedOn = false, autoLoopOn = false, antiAfkOn = false }
+local function saveConfig() pcall(function() writefile(CONFIG_FILE, HttpService:JSONEncode(config)) end) end
+local function loadConfig()
+    local ok, data = pcall(function() return readfile(CONFIG_FILE) end)
+    if ok and data and data ~= "" then
+        local ok2, parsed = pcall(function() return HttpService:JSONDecode(data) end)
+        if ok2 and parsed then for k, v in pairs(parsed) do config[k] = v end end
+    end
+end
+loadConfig()
+
 -- ⭐ ระบบภาษา
 local currentLang = "th"
 local Trans = {
-    ["th"] = { Main="Main", Mic="Mic", Setting="Setting", Farm="ฟาร์ม", FarmDesc="วาร์ปไปจุดฟาร์ม", Win="วิน", WinDesc="วาร์ปไปจุดวิน", Loop="Auto Loop", LoopDesc="สแปม Speed + Scare 0.1 วิ", Sell="Sell All", SellDesc="ขายของทั้งหมด", Speed="Speed Boost", SpeedDesc="ความเร็ว 900", Noclip="Noclip", NoclipDesc="เดินทะลุกำแพง", Jump="Inf Jump", JumpDesc="กระโดดไม่จำกัด", Hop="Server Hop", HopDesc="สุ่มเซิร์ฟเวอร์ใหม่", Rejoin="Rejoin", RejoinDesc="กลับเซิร์ฟเวอร์เดิม", Shadow="Shadow", ShadowDesc="เปิด/ปิด เงา", Lang="ภาษา / Language", LangDesc="เปลี่ยนภาษาของเมนู" },
-    ["en"] = { Main="Main", Mic="Mic", Setting="Setting", Farm="Farm", FarmDesc="Warp to Farm", Win="Win", WinDesc="Warp to Win", Loop="Auto Loop", LoopDesc="Spam Speed + Scare 0.1s", Sell="Sell All", SellDesc="Sell all items", Speed="Speed Boost", SpeedDesc="Speed 900", Noclip="Noclip", NoclipDesc="Walk through walls", Jump="Inf Jump", JumpDesc="Infinite jump", Hop="Server Hop", HopDesc="Find new server", Rejoin="Rejoin", RejoinDesc="Back to same server", Shadow="Shadow", ShadowDesc="Toggle shadows", Lang="Language / ภาษา", LangDesc="Change menu language" }
+    ["th"] = { Main="Main", Mic="Mic", Setting="Setting", Farm="ฟาร์ม", FarmDesc="วาร์ปไปจุดฟาร์ม", Win="วิน", WinDesc="วาร์ปไปจุดวิน", Loop="Auto Loop", LoopDesc="สแปม Speed + Scare 0.1 วิ", Sell="Sell All", SellDesc="ขายของทั้งหมด", Speed="Speed Boost", SpeedDesc="ความเร็ว 900", Noclip="Noclip", NoclipDesc="เดินทะลุกำแพง", Jump="Inf Jump", JumpDesc="กระโดดไม่จำกัด", Hop="Server Hop", HopDesc="สุ่มเซิร์ฟเวอร์ใหม่", Rejoin="Rejoin", RejoinDesc="กลับเซิร์ฟเวอร์เดิม", Shadow="Shadow", ShadowDesc="เปิด/ปิด เงา", Bloom="Bloom", BloomDesc="เปิด/ปิด แสงฟุ้ง", Afk="Anti-AFK", AfkDesc="กันเตะตอนยืนนิ่ง", Lang="ภาษา / Language", LangDesc="เปลี่ยนภาษาของเมนู" },
+    ["en"] = { Main="Main", Mic="Mic", Setting="Setting", Farm="Farm", FarmDesc="Warp to Farm", Win="Win", WinDesc="Warp to Win", Loop="Auto Loop", LoopDesc="Spam Speed + Scare 0.1s", Sell="Sell All", SellDesc="Sell all items", Speed="Speed Boost", SpeedDesc="Speed 900", Noclip="Noclip", NoclipDesc="Walk through walls", Jump="Inf Jump", JumpDesc="Infinite jump", Hop="Server Hop", HopDesc="Find new server", Rejoin="Rejoin", RejoinDesc="Back to same server", Shadow="Shadow", ShadowDesc="Toggle shadows", Bloom="Bloom", BloomDesc="Toggle bloom", Afk="Anti-AFK", AfkDesc="Prevent idle kick", Lang="Language / ภาษา", LangDesc="Change menu language" }
 }
 local L = function(key) return Trans[currentLang][key] or key end
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-
--- ⭐ คีย์ที่ถูกต้อง
 local VALID_KEYS = { ["SiSi"] = true }
 
 local function playSound(id, vol, pitch)
@@ -44,6 +56,27 @@ local function playSound(id, vol, pitch)
     s.Parent = SoundService; s:Play()
     task.delay(3, function() if s then s:Destroy() end end)
 end
+
+-- ⭐ ระบบ Anti-AFK
+local antiAfkActive = false
+local antiAfkThread = nil
+local function startAntiAfk()
+    if antiAfkThread then return end
+    antiAfkActive = true
+    antiAfkThread = task.spawn(function()
+        while antiAfkActive do
+            pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end)
+            task.wait(60)
+        end
+        antiAfkThread = nil
+    end)
+end
+local function stopAntiAfk() antiAfkActive = false; antiAfkThread = nil end
+pcall(function()
+    player.Idled:Connect(function()
+        if antiAfkActive then pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end) end
+    end)
+end)
 
 -- ══════════ 1. หน้า Login ══════════
 for _, parent in ipairs({playerGui, CoreGui}) do
@@ -151,7 +184,7 @@ titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 14
 titleText.TextColor3 = THEME.text
 titleText.TextXAlignment = Enum.TextXAlignment.Left
-titleText.Text = "⚡ Zero Panel"
+titleText.Text = "⚡ Zero Panel v20"
 titleText.Parent = titleBar
 
 local creditLbl = Instance.new("TextLabel")
@@ -267,19 +300,16 @@ local function switchTab(tabName)
             end
         end)
         
-        -- ⭐ SELL ALL กลับมาแล้ว
         createActionBtn("💰 "..L("Sell"), L("SellDesc"), 3, function()
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
             local sellRemote = remotes and remotes:FindFirstChild("SellAll")
-            if sellRemote then
-                pcall(function() sellRemote:InvokeServer() end)
-            end
+            if sellRemote then pcall(function() sellRemote:InvokeServer() end) end
         end)
 
-        -- ⭐ AUTO LOOP
-        local loopOn = false
-        createActionBtn("🔁 "..L("Loop"), L("LoopDesc"), 4, function(btn)
+        local loopOn = config.autoLoopOn or false
+        local loopBtn = createActionBtn("🔁 "..L("Loop"), L("LoopDesc"), 4, function(btn)
             loopOn = not loopOn
+            config.autoLoopOn = loopOn; saveConfig()
             btn:SetAttribute("ToggleColor", loopOn and THEME.on or THEME.bgCard)
             TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = loopOn and THEME.on or THEME.bgCard}):Play()
             
@@ -288,28 +318,26 @@ local function switchTab(tabName)
                     local remotes = ReplicatedStorage:FindFirstChild("Remotes")
                     local trainStep = remotes and remotes:FindFirstChild("TrainStep")
                     while loopOn do
-                        if trainStep then
-                            pcall(function() 
-                                trainStep:FireServer("Speed")
-                                trainStep:FireServer("Scare")
-                            end)
-                        end
+                        if trainStep then pcall(function() trainStep:FireServer("Speed"); trainStep:FireServer("Scare") end) end
                         task.wait(0.1)
                     end
                 end)
             end
         end)
+        if loopOn then loopBtn:SetAttribute("ToggleColor", THEME.on); loopBtn.BackgroundColor3 = THEME.on end
 
     -- ═══════════ หน้า MIC ═══════════
     elseif tabName == "Mic" then
-        local speedOn = false
-        createActionBtn("⚡ "..L("Speed"), L("SpeedDesc"), 1, function(btn)
+        local speedOn = config.speedOn or false
+        local speedBtn = createActionBtn("⚡ "..L("Speed"), L("SpeedDesc"), 1, function(btn)
             speedOn = not speedOn
+            config.speedOn = speedOn; saveConfig()
             btn:SetAttribute("ToggleColor", speedOn and THEME.on or THEME.bgCard)
             TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = speedOn and THEME.on or THEME.bgCard}):Play()
             local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum.WalkSpeed = speedOn and 900 or 16 end
         end)
+        if speedOn then speedBtn:SetAttribute("ToggleColor", THEME.on); speedBtn.BackgroundColor3 = THEME.on end
 
         local noclipOn = false
         createActionBtn("👻 "..L("Noclip"), L("NoclipDesc"), 2, function(btn)
@@ -345,10 +373,9 @@ local function switchTab(tabName)
 
     -- ═══════════ หน้า SETTING ═══════════
     elseif tabName == "Setting" then
-        -- ⭐ ระบบเปลี่ยนภาษา กลับมาแล้ว
         createActionBtn("🌐 "..L("Lang"), L("LangDesc").." (TH/EN)", 1, function(btn)
             currentLang = currentLang == "th" and "en" or "th"
-            switchTab("Setting") -- รีโหลดหน้าเพื่อเปลี่ยนภาษา
+            switchTab("Setting")
         end)
 
         createActionBtn("🌐 "..L("Hop"), L("HopDesc"), 2, function()
@@ -373,6 +400,26 @@ local function switchTab(tabName)
             TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = shadowOn and THEME.on or THEME.bgCard}):Play()
             Lighting.GlobalShadows = shadowOn
         end)
+
+        local bloomOn = true
+        createActionBtn("✨ "..L("Bloom"), L("BloomDesc"), 5, function(btn)
+            bloomOn = not bloomOn
+            btn:SetAttribute("ToggleColor", bloomOn and THEME.on or THEME.bgCard)
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = bloomOn and THEME.on or THEME.bgCard}):Play()
+            local b = Lighting:FindFirstChildOfClass("BloomEffect")
+            if not b and bloomOn then b = Instance.new("BloomEffect", Lighting) end
+            if b then b.Enabled = bloomOn end
+        end)
+
+        local afkOn = config.antiAfkOn or false
+        local afkBtn = createActionBtn("🛡️ "..L("Afk"), L("AfkDesc"), 6, function(btn)
+            afkOn = not afkOn
+            config.antiAfkOn = afkOn; saveConfig()
+            btn:SetAttribute("ToggleColor", afkOn and THEME.on or THEME.bgCard)
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = afkOn and THEME.on or THEME.bgCard}):Play()
+            if afkOn then startAntiAfk() else stopAntiAfk() end
+        end)
+        if afkOn then afkBtn:SetAttribute("ToggleColor", THEME.on); afkBtn.BackgroundColor3 = THEME.on end
     end
 end
 
@@ -396,6 +443,16 @@ mainUI_Open = function()
     mainFrame.Size = UDim2.fromOffset(0, 0)
     TweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Size = UDim2.fromOffset(420, 320)}):Play()
     switchTab("Main")
+    
+    -- ⭐ เช็คค่า Config ตอนเปิด UI ครั้งแรก
+    task.defer(function()
+        task.wait(0.5)
+        if config.antiAfkOn then startAntiAfk() end
+        if config.speedOn then
+            local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = 900 end
+        end
+    end)
 end
 
 local showBtn = Instance.new("TextButton")
@@ -419,4 +476,4 @@ showBtn.MouseButton1Click:Connect(function()
     showBtn.Visible = false; mainUI_Open()
 end)
 
-print("[⚡ Zero Panel v19] โหลดสำเร็จ! ใส่คีย์ SiSi เพื่อเข้าใช้งาน")
+print("[⚡ Zero Panel v20] โหลดสำเร็จ! ใส่คีย์ SiSi")
